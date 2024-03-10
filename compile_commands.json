@@ -1,0 +1,14 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/clang",
+      "-c",
+      "-o",
+      "build/cvkstart.o",
+      "src/cvkstart.c"
+    ],
+    "directory": "/home/albin/coding-projects/cvkstart",
+    "file": "/home/albin/coding-projects/cvkstart/src/cvkstart.c",
+    "output": "/home/albin/coding-projects/cvkstart/build/cvkstart.o"
+  }
+]
