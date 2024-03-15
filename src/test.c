@@ -1,5 +1,6 @@
 #include <stdio.h>
-#include "cvkstart.h"
+//#include "cvkstart.h"
+#include "cvkstart.c"
 
 int
 main()
@@ -10,14 +11,43 @@ main()
             (vs_instance_builder)
             {
                 .app_name = "Eude",
-                .engine_name = "Eugène",
+                .engine_name = "Eugene",
                 .request_validation_layers = true,
-                .minimum_api_version = VK_MAKE_VERSION(1, 3, 0),
+                .minimum_api_version = VK_MAKE_VERSION(1, 2, 0),
+                .validation_layers_message_types = VS_DEBUG_UTILS_MESSAGE_TYPE_ALL,
             },
             &instance
             )
         )
     {
+        printf("Could not create instance. LEBRON JAMES\n");
+        return 1;
+    }
+
+    VkPhysicalDevice dev =
+        vs_select_physical_device(
+            (vs_physical_device_selector)
+            {
+                .required_types                   = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU | VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU,
+                .required_features.geometryShader = true,
+                .minimum_version                  = VK_VERSION_1_3,
+                .require_present_queue            = false,
+                .required_queue_count             = 5,
+                .required_queues                  = (vs_queue_request[5])
+                {
+                    [0] = { .required_flags = VK_QUEUE_TRANSFER_BIT },
+                    [1] = { .required_flags = VK_QUEUE_TRANSFER_BIT },
+                    [2] = { .required_flags = VK_QUEUE_TRANSFER_BIT },
+                    [3] = { .required_flags = VK_QUEUE_TRANSFER_BIT },
+                    [4] = { .required_flags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT },
+                }
+            },
+            instance
+            );
+
+    if(dev == VK_NULL_HANDLE)
+    {
+        printf("Could not find physical device.\n");
         return 1;
     }
 

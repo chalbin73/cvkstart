@@ -35,6 +35,11 @@
 #include <vulkan/vulkan.h>
 #include <stdbool.h>
 
+#define VS_DEBUG_UTILS_MESSAGE_TYPE_ALL \
+        VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | \
+        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | \
+        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT
+
 // ### INSTANCE
 
 /**
@@ -100,22 +105,6 @@ bool vs_instance_builder_build(vs_instance_builder instance_builder, vs_instance
 void vs_instance_destroy(vs_instance    instance);
 
 /**
- * @brief Represents the way a queue must follow required flags
- */
-typedef enum
-{
-    /**
-     * @brief The queue flags must be strictly equal to those specified by the user
-     */
-    VS_QUEUE_SELECT_STRICT,
-
-    /**
-     * @brief The queue flags must support at least the ones specified by the user
-     */
-    VS_QUEUE_SELECT_SUPPORTS,
-} vs_queue_select_mode;
-
-/**
  * @brief Represents a VkQueue request that must be fullfilled when creating a device
  */
 typedef struct
@@ -123,17 +112,13 @@ typedef struct
     /**
      * @brief The flags that the queue must support
      */
-    VkQueueFlagBits         required_flags;
-
-    /**
-     * @brief How the queue must support those flags
-     */
-    vs_queue_select_mode    select_mode;
+    VkQueueFlagBits    required_flags;
 
     /**
      * @brief Where to write the created queue after it was selected
      */
-    VkQueue                *destination;
+    VkQueue           *destination;
+
 } vs_queue_request;
 
 /**
@@ -184,6 +169,17 @@ typedef struct
      */
     VkPhysicalDeviceFeatures    required_features;
 
+    /**
+     * @brief The device type to strictly require
+     */
+    VkPhysicalDeviceType        required_types;
+
+    /**
+     * @brief In the event of multiple device being available
+     *        through previous criterion, which type to prefer
+     */
+    VkPhysicalDeviceType    preferred_type;
+
 } vs_physical_device_selector;
 
 
@@ -194,6 +190,69 @@ typedef struct
  * @return A suitable physical device or `VK_NULL_HANDLE` if no suitable device was found.
  */
 VkPhysicalDevice vs_select_physical_device(vs_physical_device_selector selector, vs_instance instance);
+
+// ## DEVICE CREATION
+
+typedef struct
+{
+    /**
+     * @brief The physical device with which to create the device
+     */
+    VkPhysicalDevice    physical_device;
+
+    /**
+     * @brief The number of queues to request
+     */
+    uint32_t            queue_request_count;
+
+    /**
+     * @brief A pointer to a list of queue requests struct, with valid pointers in the `vs_queue_request::destination` field.
+     */
+    vs_queue_request   *queue_requests;
+
+    /**
+     * @brief Wether or not to request a present queue
+     */
+    bool                request_present_queue;
+
+    /**
+     * @brief The surface with which to query for the present queue. Cannot be `VK_NULL_HANDLE` unless `request_present_queue` is `false`
+     */
+    VkSurfaceKHR        surface;
+
+    /**
+     * @brief Where to write the gotten present queue. Cannot be `VK_NULL_HANDLE` unless `request_present_queue` is `false`
+     * @note The present queue can be selected amongst the previously acquired queue, but this is not necessary.
+     */
+    VkQueue                    *present_destination;
+
+    /**
+     * @brief The features to enable on the device.
+     */
+    VkPhysicalDeviceFeatures    features;
+
+    /**
+     * @brief The amount of extensions to enable
+     */
+    uint32_t                    enable_extension_count;
+
+    /**
+     * @brief A pointer to a list of string literals of extensions to enable on the device.
+     */
+    char                      **enable_extensions;
+
+} vs_device_builder;
+
+/**
+ * @brief Creates a device using the provided information
+ *
+ * @param device_builder The information to create the device
+ * @param instance The instance with which to create the device
+ * @return The device or `VK_NULL_HANDLE` if the device could not be created
+ * @note SIDE EFFECTS: The pointers provided in the queue request information will be accessed and modified.
+ *       if the device cannot be created the will not be modified and will remain in their initial state
+ */
+VkDevice vs_device_create(vs_device_builder device_builder, vs_instance instance);
 
 #endif //__CVKSTART_H__
 

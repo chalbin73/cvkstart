@@ -144,6 +144,8 @@ vs_instance_builder_build(vs_instance_builder instance_builder, vs_instance *out
     uint32_t instance_version = 0;
     vkEnumerateInstanceVersion(&instance_version);
 
+    out_instance->messenger_created = false;
+
     if(instance_builder.required_api_version != 0) // Select version based on strict requirement
     {
         if(instance_version < instance_builder.required_api_version)
@@ -196,8 +198,9 @@ vs_instance_builder_build(vs_instance_builder instance_builder, vs_instance *out
     }
 
     // Setup extensions
-    uint32_t extension_count = instance_builder.requested_extension_count;
-    char **all_extensions    = alloca(sizeof(char *) * extension_count);
+    uint32_t extension_count = instance_builder.requested_extension_count +
+                               (instance_builder.request_validation_layers ? 1 : 0); // Validations layers need a specific layer
+    char **all_extensions = alloca(sizeof(char *) * extension_count);
 
     // Fill extensions
     {
@@ -265,14 +268,14 @@ vs_instance_builder_build(vs_instance_builder instance_builder, vs_instance *out
             VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
             VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
         .messageType     = instance_builder.validation_layers_message_types,
-        .pfnUserCallback = instance_builder.messenger_callback ? _vc_default_debug_callback : instance_builder.messenger_callback,
+        .pfnUserCallback = !instance_builder.messenger_callback ? _vc_default_debug_callback : instance_builder.messenger_callback,
         .pUserData       = instance_builder.messenger_user_data,
     };
 
     VkDebugUtilsMessengerEXT messenger = VK_NULL_HANDLE;
     VkResult messenger_res             = _vs_vkCreateDebugUtilsMessengerEXT(instance, &messenger_ci, instance_builder.allocation_callbacks, &messenger);
 
-    if(messenger != VK_SUCCESS)
+    if(messenger_res != VK_SUCCESS)
     {
         vkDestroyInstance(instance, instance_builder.allocation_callbacks);
         return false;
@@ -327,7 +330,7 @@ _vs_enumerate_phydev_candidates(VkInstance instance, uint32_t *count, _vs_phydev
     }
 }
 
-// Criterions
+// ## Criterions
 void
 _vs_phydev_crit_minimum_version(_vs_phydev_candidate *candidate, vs_physical_device_selector selector)
 {
@@ -527,6 +530,33 @@ _vs_phydev_crit_required_extensions(_vs_phydev_candidate *candidate, vs_physical
     }
 }
 
+/**
+ * @brief Computes a "distance" between flags supported by a queue and required ones
+ *
+ * @param queue_flags
+ * @param required_flags
+ * @return Negative number if the queue does not support required, a distance otherwise
+ */
+int32_t
+_vs_queue_flags_distance(VkQueueFlags queue_flags, VkQueueFlags required_flags)
+{
+    if( (required_flags & queue_flags) != required_flags )
+    {
+        return -1;
+    }
+
+    int32_t distance = 0;
+    uint32_t mask    = queue_flags ^ required_flags;  // Will contain ones where the bits are different
+
+    // Count set bits in mask which will be our distance
+    while(mask)
+    {
+        distance += mask & 1;
+        mask    >>= 1;
+    }
+    return distance;
+}
+
 void
 _vs_phydev_crit_required_queues(_vs_phydev_candidate *candidate, vs_physical_device_selector selector)
 {
@@ -535,10 +565,58 @@ _vs_phydev_crit_required_queues(_vs_phydev_candidate *candidate, vs_physical_dev
     VkQueueFamilyProperties *props = alloca(sizeof(VkQueueFamilyProperties) * prop_count);
     vkGetPhysicalDeviceQueueFamilyProperties(candidate->device, &prop_count, props);
 
-    uint8_t *suitable_matrix = alloca(sizeof(uint8_t) * prop_count * selector.required_queue_count);
-    memset(suitable_matrix, 0, sizeof(uint8_t) * prop_count * selector.required_queue_count);
+    // Queue selection algorithm principle :
+    //
+    // Perform a kind of "selection sort" :
+    // Foreach request :
+    //  Create a queue in the best fitting queue family (using distance function)
+    //  Mark request as treated
+    // Redo
 
+    for(uint32_t i = 0; i < selector.required_queue_count; i++)
+    {
+        // Select best fitting queue family
+        int32_t best      = -1;
+        int32_t best_dist = -1;
 
+        for(uint32_t j = 0; j < prop_count; j++)
+        {
+            int32_t dist = _vs_queue_flags_distance(props[j].queueFlags, selector.required_queues[j].required_flags);
+            if(dist < 0) // Queue supports
+                continue;
+
+            if(dist > best_dist && props[j].queueCount > 0)
+            {
+                best_dist = dist;
+                best      = j;
+            }
+        }
+
+        if(best < 0)
+        {
+            // no fitting queue familly was found
+            _VS_PHYDEV_UNSUITABLE(*candidate);
+            return;
+        }
+
+        // Found a suitable queue familly, "allocate" queue from it
+        props[best].queueCount--;
+    }
+}
+
+void
+_vs_phydev_crit_required_types(_vs_phydev_candidate *candidate, vs_physical_device_selector selector, bool required)
+{
+    VkPhysicalDeviceProperties props;
+    vkGetPhysicalDeviceProperties(candidate->device, &props);
+
+    VkPhysicalDeviceType req = required ?
+                               selector.required_types : selector.preferred_type;
+
+    if( (props.deviceType & req) == 0 && req != 0 )
+    {
+        _VS_PHYDEV_UNSUITABLE(*candidate);
+    }
 }
 
 VkPhysicalDevice
@@ -550,7 +628,32 @@ vs_select_physical_device(vs_physical_device_selector selector, vs_instance inst
     _vs_phydev_candidate *candidates = alloca(sizeof(_vs_phydev_candidate) * phydev_count);
     _vs_enumerate_phydev_candidates(instance.vk_instance, &phydev_count, candidates);
 
+    uint32_t suitable_count = 0;
     // Start eliminating candidates based on criterions
+    for(uint32_t i = 0; i < phydev_count; i++)
+    {
+        _vs_phydev_crit_minimum_version(&candidates[i], selector);
+        _vs_phydev_crit_present_queue(&candidates[i], selector);
+        _vs_phydev_crit_required_queues(&candidates[i], selector);
+        _vs_phydev_crit_required_extensions(&candidates[i], selector);
+        _vs_phydev_crit_required_features(&candidates[i], selector);
+        _vs_phydev_crit_required_types(&candidates[i], selector, true);
+        if(candidates[i].suitable)
+            suitable_count++;
+    }
 
+    // TODO: Score devices based on preferred selectors
+    return suitable_count == 0 ? VK_NULL_HANDLE : candidates[0].device;
+}
+
+// ## Device creation
+
+VkDevice
+vs_device_create(vs_device_builder device_builder, vs_instance instance)
+{
+    VkDeviceCreateInfo device_ci =
+    {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+    };
 }
 

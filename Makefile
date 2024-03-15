@@ -7,7 +7,7 @@ LDFLAGS=
 all: header static
 
 folders:
-	mkdir build
+	mkdir -p build
 
 header:
 	@echo "header not yet implemented"
