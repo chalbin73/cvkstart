@@ -1,3 +1,8 @@
+/**
+ * @file cvkstart.h
+ * @brief Main header for the `cvkstart`
+ */
+
 // ### CVKSTART ###
 
 /*
@@ -47,11 +52,25 @@
  */
 typedef struct
 {
-    VkInstance                  vk_instance;
+    /**
+     * @brief The vulkan instance created by `vs_instance_builder_build`
+     */
+    VkInstance    vk_instance;
 
-    bool                        messenger_created;
+    /**
+     * @brief Wether or not a messenger has been created with this instance (i.e. validation layers enabled)
+     */
+    bool          messenger_created;
+
+    /**
+     * @brief Messenger for this instance
+     * @note Not valid handle unless `messenger_created` is `true`.
+     */
     VkDebugUtilsMessengerEXT    messenger;
 
+    /**
+     * @brief The allocation callbacks to be used on all calls by `cvkstart`
+     */
     VkAllocationCallbacks      *allocation_callbacks;
 } vs_instance;
 
@@ -116,8 +135,16 @@ typedef struct
 
     /**
      * @brief Where to write the created queue after it was selected
+     * @note Unused/Can be null when used for querying physical device
      */
-    VkQueue           *destination;
+    VkQueue   *destination;
+
+    /**
+     * @brief A pointer to a floating point used for creating queues
+     * @note Unused/Can be null when used for querying physical device
+     * @note If null when creating device a static float of value `1.0` will be used
+     */
+    float   *queue_priority;
 
 } vs_queue_request;
 
@@ -196,11 +223,6 @@ VkPhysicalDevice vs_select_physical_device(vs_physical_device_selector selector,
 typedef struct
 {
     /**
-     * @brief The physical device with which to create the device
-     */
-    VkPhysicalDevice    physical_device;
-
-    /**
      * @brief The number of queues to request
      */
     uint32_t            queue_request_count;
@@ -252,7 +274,16 @@ typedef struct
  * @note SIDE EFFECTS: The pointers provided in the queue request information will be accessed and modified.
  *       if the device cannot be created the will not be modified and will remain in their initial state
  */
-VkDevice vs_device_create(vs_device_builder device_builder, vs_instance instance);
+VkDevice vs_device_create(VkPhysicalDevice physical_device, vs_device_builder device_builder, vs_instance instance);
+
+/**
+ * @brief Routine to handle the destruction of a device.
+ * @note You don't really need to use this function unless you passed some allocation callbacks on instance creation. (this function applies them)
+ *
+ * @param device The device to destroy
+ * @param instance The instance with which the device was created
+ */
+void     vs_device_destroy(VkDevice device, vs_instance instance);
 
 #endif //__CVKSTART_H__
 

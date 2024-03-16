@@ -581,11 +581,11 @@ _vs_phydev_crit_required_queues(_vs_phydev_candidate *candidate, vs_physical_dev
 
         for(uint32_t j = 0; j < prop_count; j++)
         {
-            int32_t dist = _vs_queue_flags_distance(props[j].queueFlags, selector.required_queues[j].required_flags);
+            int32_t dist = _vs_queue_flags_distance(props[j].queueFlags, selector.required_queues[i].required_flags);
             if(dist < 0) // Queue supports
                 continue;
 
-            if(dist > best_dist && props[j].queueCount > 0)
+            if( (dist < best_dist || best_dist < 0) && props[j].queueCount > 0 )
             {
                 best_dist = dist;
                 best      = j;
@@ -648,12 +648,223 @@ vs_select_physical_device(vs_physical_device_selector selector, vs_instance inst
 
 // ## Device creation
 
-VkDevice
-vs_device_create(vs_device_builder device_builder, vs_instance instance)
+typedef struct
 {
-    VkDeviceCreateInfo device_ci =
+    uint32_t    familly_index;
+    uint32_t    queue_index;
+
+    VkQueue    *destination;
+} _vs_dev_queue_write;
+
+bool
+_vs_dev_create_queues_info(VkPhysicalDevice device, vs_device_builder builder,
+                           uint32_t *queue_write_count, _vs_dev_queue_write *queue_writes,
+                           uint32_t *queue_create_info_count, VkDeviceQueueCreateInfo *queue_create_infos)
+{
+    // Statics
+    static float _one_prio = 1.0f;
+
+    uint32_t prop_count = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &prop_count, NULL);
+    VkQueueFamilyProperties *props = alloca(sizeof(VkQueueFamilyProperties) * prop_count);
+
+    // Will represent the amount of allocations per queue family
+    uint32_t *allocations = alloca(sizeof(uint32_t) * prop_count);
+    memset(allocations, 0, sizeof(uint32_t) * prop_count);
+
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &prop_count, props);
+
+    // Queue selection algorithm principle :
+    //
+    // Perform a kind of "selection sort" :
+    // Foreach request :
+    //  Create a queue in the best fitting queue family (using distance function)
+    //  Mark request as treated
+    // Redo
+
+    bool present_found   = false;
+    uint32_t write_count = 0;
+    uint32_t ci_count    = 0;
+    for(uint32_t i = 0; i < builder.queue_request_count; i++)
     {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        // ### Select best fitting queue family ###
+        int32_t best      = -1;
+        int32_t best_dist = -1;
+
+        for(uint32_t j = 0; j < prop_count; j++)
+        {
+            int32_t dist = _vs_queue_flags_distance(props[j].queueFlags, builder.queue_requests[i].required_flags);
+            if(dist < 0) // Queue supports
+                continue;
+
+            if( (dist < best_dist || best_dist < 0) && props[j].queueCount > 0 )
+            {
+                best_dist = dist;
+                best      = j;
+            }
+        }
+
+        // --- IF NO FITTING QUEUE FAMILY WAS FOUND
+        if(best < 0)
+        {
+            // no fitting queue familly was found, request cannot be fullfilled
+            return false;
+        }
+
+        queue_writes[write_count++] = (_vs_dev_queue_write)
+        {
+            .destination   = builder.queue_requests[i].destination,
+            .queue_index   = allocations[best],
+            .familly_index = best,
+        };
+
+        // Handle support
+        if(!present_found && builder.request_present_queue)
+        {
+            VkBool32 presents = VK_FALSE;
+            vkGetPhysicalDeviceSurfaceSupportKHR(device, best, builder.surface, &presents);
+            if(presents)
+            {
+                queue_writes[write_count++] = (_vs_dev_queue_write)
+                {
+                    .destination   = builder.present_destination,
+                    .queue_index   = allocations[best],
+                    .familly_index = best,
+                };
+            }
+        }
+
+        props[best].queueCount--;
+        allocations[best]++;
+    }
+
+    // Manage queue cis
+    for(uint32_t i = 0; i < prop_count; i++)
+    {
+        if(allocations[i] != 0)
+        {
+            queue_create_infos[ci_count++] = (VkDeviceQueueCreateInfo)
+            {
+                .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                .queueCount       = allocations[i],
+                .flags            = 0,
+                .queueFamilyIndex = i,
+                .pQueuePriorities = &_one_prio,
+            };
+        }
+    }
+
+    // Check for present support
+    if(!builder.request_present_queue || present_found) // Logical equivalent of request_present => present_found
+    {
+        *queue_create_info_count = ci_count;
+        *queue_write_count       = write_count;
+        return true;
+    }
+
+    // Create queue for present
+    // Search for present queue
+    present_found = false;
+    uint32_t present_family = 0;
+    for(uint32_t i = 0; i < prop_count; i++)
+    {
+        VkBool32 presents = VK_FALSE;
+        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, builder.surface, &presents);
+
+        if(presents && props[i].queueCount > 0)
+        {
+            present_found  = true;
+            present_family = i;
+            break;
+        }
+    }
+
+    if(!present_found)
+    {
+        return false;
+    }
+
+    // Write new present queue
+    queue_writes[write_count++] = (_vs_dev_queue_write)
+    {
+        .destination   = builder.present_destination,
+        .queue_index   = 0,
+        .familly_index = present_family,
     };
+
+    queue_create_infos[ci_count++] = (VkDeviceQueueCreateInfo)
+    {
+        .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .queueCount       = 1,
+        .flags            = 0,
+        .queueFamilyIndex = present_family,
+        .pQueuePriorities = &_one_prio,
+    };
+
+    *queue_create_info_count = ci_count;
+    *queue_write_count       = write_count;
+    return true;
 }
 
+VkDevice
+vs_device_create(VkPhysicalDevice physical_device, vs_device_builder device_builder, vs_instance instance)
+{
+    // We don't exactly know how big those arrays are, but we have a good upper bound
+    _vs_dev_queue_write *queue_writes  = alloca( sizeof(_vs_dev_queue_write) * (device_builder.queue_request_count + 1) ); // +1 to accomodate for present queue
+    VkDeviceQueueCreateInfo *queue_cis = alloca( sizeof(VkDeviceQueueCreateInfo) * (device_builder.queue_request_count + 1) );
+
+    uint32_t queue_write_count = 0;
+    uint32_t queue_ci_count    = 0;
+
+    bool queue_result = _vs_dev_create_queues_info(
+        physical_device,
+        device_builder,
+        &queue_write_count,
+        queue_writes,
+        &queue_ci_count,
+        queue_cis
+        );
+
+    if(!queue_result)
+    {
+        return VK_NULL_HANDLE;
+    }
+
+    VkDeviceCreateInfo device_ci =
+    {
+        .sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .flags                   = 0,
+        .pEnabledFeatures        = &device_builder.features,
+        .pQueueCreateInfos       = queue_cis,
+        .queueCreateInfoCount    = queue_ci_count,
+        .enabledExtensionCount   = device_builder.enable_extension_count,
+        .ppEnabledExtensionNames = (const char * const *)device_builder.enable_extensions,
+    };
+
+    VkDevice device        = VK_NULL_HANDLE;
+    VkResult device_result = vkCreateDevice(physical_device, &device_ci, instance.allocation_callbacks, &device);
+
+    if(device_result != VK_SUCCESS)
+    {
+        return VK_NULL_HANDLE;
+    }
+
+    // Retrieve queues
+    for(uint32_t i = 0; i < queue_write_count; i++)
+    {
+        VkQueue q = VK_NULL_HANDLE;
+        vkGetDeviceQueue(device, queue_writes[i].familly_index, queue_writes[i].queue_index, &q);
+
+        if(queue_writes[i].destination)
+        {
+            *queue_writes[i].destination = q;
+        }
+    }
+
+    return device;
+}
+
+void     vs_device_destroy(VkDevice device, vs_instance instance)
+{
+    vkDestroyDevice(device, instance.allocation_callbacks);
+}
