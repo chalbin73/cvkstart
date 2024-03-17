@@ -285,5 +285,125 @@ VkDevice vs_device_create(VkPhysicalDevice physical_device, vs_device_builder de
  */
 void     vs_device_destroy(VkDevice device, vs_instance instance);
 
+// ## FORMAT STUFF
+
+/**
+ * @brief Represents a set of vulkan formats.
+ */
+typedef struct
+{
+    /**
+     * @brief The number of formats in the set
+     */
+    uint32_t    format_count;
+
+    /**
+     * @brief A pointer to an array of formats, containing `format_count` elements
+     */
+    VkFormat   *formats;
+} vs_format_set;
+
+/**
+ * @brief Represents a query for a format
+ */
+typedef struct
+{
+    VkFormatFeatureFlags    required_linear_tiling_features;
+    VkFormatFeatureFlags    required_optimal_tiling_features;
+    VkFormatFeatureFlags    required_buffer_features;
+} vs_format_query;
+
+// TODO: Add useful format sets like : RGB, RGBA ...
+
+/**
+ * @brief Finds the first format in `candidates` supporting the features in `query`
+ *
+ * @param physical_device The physical device on which to query
+ * @param query The requirements
+ * @param candidates The formats in which to find a suitable one
+ * @param[out] index A pointer to where to write the first suitable format
+ * @return Wether or not a suitable format was found
+ * @note The integer pointed to by `index` will not be modified if the return value is false
+ */
+bool     vs_format_query_index(VkPhysicalDevice physical_device, vs_format_query query, vs_format_set candidates, uint32_t *index);
+
+/**
+ * @brief Finds the first format in `candidates` supporting the features in `query`
+ *
+ * @param physical_device The physical device on which to query
+ * @param query The requirements
+ * @param candidates The formats in which to find a suitable one
+ * @return The first suitable format found. `VK_FORMAT_UNDEFINED` if no suitable format was found.
+ */
+VkFormat vs_format_query_format(VkPhysicalDevice physical_device, vs_format_query query, vs_format_set candidates);
+
+/**
+ * @brief Finds the formats in `candidates` supporting the features in `query`
+ *
+ * @param physical_device The physical device on which to query
+ * @param query The requirements
+ * @param candidates The formats in which to find a suitable one
+ * @param[out] out_count The number of output formats
+ * @param[out] out_formats Where to write the output formats (can be NULL)
+ */
+void     vs_format_query_formats(VkPhysicalDevice physical_device, vs_format_query query, vs_format_set set, uint32_t *out_count, VkFormat *out_formats);
+
+// ## SWAPCHAIN
+
+#ifndef VS_SWAPCHAIN_MAX_IMG_COUNT
+#define VS_SWAPCHAIN_MAX_IMG_COUNT 8
+#endif
+
+typedef struct vs_swapchain_info
+{
+    VkExtent2D         swapchain_extent;
+    VkFormat           swapchain_image_format;
+    VkColorSpaceKHR    swapchain_color_space;
+
+    uint32_t           image_count;
+    VkImage            swapchain_images[VS_SWAPCHAIN_MAX_IMG_COUNT];
+} vs_swapchain_info;
+
+typedef void (*vs_swapchain_callback_func)(VkDevice device, void *udata, vs_swapchain_info swapchain);
+
+typedef struct vs_swapchain
+{
+    bool                          swapchain_created;
+    VkSwapchainKHR                vk_swapchain;
+    VkSurfaceKHR                  surface;
+    VkImageUsageFlags             image_usage;
+
+    vs_swapchain_info             swapchain_info;
+
+    vs_swapchain_callback_func    create_callback;
+    vs_swapchain_callback_func    destroy_callback;
+    void                         *callback_udata;
+} vs_swapchain;
+
+/**
+ * @brief Sets up a `cvkstart` swapchain
+ *
+ * @param device The device with which to create the swapchain
+ * @param surface The surface with which to create the swapchain
+ * @param image_usage The image usage of the swapchain images
+ * @param query A query for the format
+ * @param set The format amongst which to search a suitable one
+ * @param create_callback The callback used when creating the swapchain
+ * @param destroy_callback The callback used when destroying the swapchain
+ * @param callback_udata The user data to pass to the callbacks
+ * @param[out] swapchain A pointer to were to write the new swapchain object
+ * @returns Wether or not the swapchain set up was successful
+ * @note The swapchain won't be ready after the call of this function.
+ */
+void vs_swapchain_preconfigure(VkDevice device,
+                               VkSurfaceKHR surface,
+                               VkImageUsageFlags image_usage, vs_format_query query, vs_format_set set,
+                               vs_swapchain_callback_func create_callback,
+                               vs_swapchain_callback_func destroy_callback,
+                               void *callback_udata,
+                               vs_swapchain *swapchain);
+
+
+
 #endif //__CVKSTART_H__
 

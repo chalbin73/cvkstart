@@ -864,7 +864,101 @@ vs_device_create(VkPhysicalDevice physical_device, vs_device_builder device_buil
     return device;
 }
 
-void     vs_device_destroy(VkDevice device, vs_instance instance)
+void
+vs_device_destroy(VkDevice device, vs_instance instance)
 {
     vkDestroyDevice(device, instance.allocation_callbacks);
 }
+
+// ## FORMAT STUFF
+
+bool
+vs_format_query_index(VkPhysicalDevice physical_device, vs_format_query query, vs_format_set candidates, uint32_t *index)
+{
+    for(int i = 0; i < candidates.format_count; i++)
+    {
+        VkFormatProperties props;
+        vkGetPhysicalDeviceFormatProperties(physical_device, candidates.formats[i], &props);
+
+        bool valid = true;
+
+        valid &= ( (props.optimalTilingFeatures & query.required_optimal_tiling_features) == query.required_optimal_tiling_features );
+        valid &= ( (props.linearTilingFeatures & query.required_linear_tiling_features) == query.required_linear_tiling_features );
+        valid &= ( (props.bufferFeatures & query.required_buffer_features) == query.required_buffer_features );
+
+        if(valid)
+        {
+            *index = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+VkFormat
+vs_format_query_format(VkPhysicalDevice physical_device, vs_format_query query, vs_format_set candidates)
+{
+    uint32_t index = 0;
+    if( vs_format_query_index(physical_device, query, candidates, &index) )
+    {
+        return candidates.formats[index];
+    }
+    return VK_FORMAT_UNDEFINED;
+}
+
+void
+vs_format_query_formats(VkPhysicalDevice physical_device, vs_format_query query, vs_format_set candidates, uint32_t *out_count, VkFormat *out_formats)
+{
+    if(!out_count)
+    {
+        return;
+    }
+    *out_count = 0;
+
+    for(int i = 0; i < candidates.format_count; i++)
+    {
+        VkFormatProperties props;
+        vkGetPhysicalDeviceFormatProperties(physical_device, candidates.formats[i], &props);
+
+        bool valid = true;
+
+        valid &= ( (props.optimalTilingFeatures & query.required_optimal_tiling_features) == query.required_optimal_tiling_features );
+        valid &= ( (props.linearTilingFeatures & query.required_linear_tiling_features) == query.required_linear_tiling_features );
+        valid &= ( (props.bufferFeatures & query.required_buffer_features) == query.required_buffer_features );
+
+        if(valid)
+        {
+            if(out_formats)
+            {
+                out_formats[*out_count] = candidates.formats[i];
+            }
+            (*out_count)++;
+        }
+    }
+}
+
+void
+vs_swapchain_preconfigure(VkDevice device,
+                          VkSurfaceKHR surface,
+                          VkImageUsageFlags image_usage, vs_format_query query, vs_format_set set,
+                          vs_swapchain_callback_func create_callback,
+                          vs_swapchain_callback_func destroy_callback,
+                          void *callback_udata,
+                          vs_swapchain *swapchain)
+{
+    vs_swapchain swp =
+    {
+        0
+    };
+
+    swp.vk_swapchain      = VK_NULL_HANDLE;
+    swp.swapchain_created = false;
+
+    swp.create_callback  = create_callback;
+    swp.destroy_callback = destroy_callback;
+    swp.callback_udata   = callback_udata;
+    swp.image_usage      = image_usage;
+
+
+}
+
