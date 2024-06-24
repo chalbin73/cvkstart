@@ -1,4 +1,5 @@
 #include "cvkstart.h"
+#include <stdbool.h>
 
 #define VS_VALIDATION_LAYER      "VK_LAYER_KHRONOS_validation"
 #define VS_DEBUG_UTILS_EXTENSION "VK_EXT_debug_utils"
@@ -937,28 +938,36 @@ vs_format_query_formats(VkPhysicalDevice physical_device, vs_format_query query,
     }
 }
 
-void
+/**
+ * @brief Sets up a `cvkstart` swapchain
+ *
+ * @param device The device with which to create the swapchain
+ * @param surface The surface with which to create the swapchain
+ * @param image_usage The image usage of the swapchain images
+ * @param image_format The format used for the images
+ * @param swapchain_color_space The colorspace to use for the swapchain
+ * @param[out] swapchain A pointer to were to write the new swapchain object
+ * @returns Wether or not the swapchain set up was successful
+ * @note The swapchain won't be ready after the call of this function.
+ */
+bool
 vs_swapchain_preconfigure(VkDevice device,
                           VkSurfaceKHR surface,
-                          VkImageUsageFlags image_usage, vs_format_query query, vs_format_set set,
-                          vs_swapchain_callback_func create_callback,
-                          vs_swapchain_callback_func destroy_callback,
-                          void *callback_udata,
+                          VkImageUsageFlags image_usage, VkFormat image_format, VkColorSpaceKHR swapchain_color_space,
                           vs_swapchain *swapchain)
 {
-    vs_swapchain swp =
-    {
-        0
-    };
+    // Copy necessary info into stuct
+    swapchain->surface                               = surface;
+    swapchain->swapchain_info.image_usage            = image_usage;
+    swapchain->swapchain_info.swapchain_image_format = image_format;
+    swapchain->swapchain_info.swapchain_color_space  = swapchain_color_space;
 
-    swp.vk_swapchain      = VK_NULL_HANDLE;
-    swp.swapchain_created = false;
+    return true;
+}
 
-    swp.create_callback  = create_callback;
-    swp.destroy_callback = destroy_callback;
-    swp.callback_udata   = callback_udata;
-    swp.image_usage      = image_usage;
-
+bool
+vs_swapchain_create(vs_swapchain    swapchain)
+{
 
 }
 

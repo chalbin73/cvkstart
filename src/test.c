@@ -85,6 +85,7 @@ main()
         printf("Could not create physical device.\n");
         return 1;
     }
+    printf("All ok\n");
 
     vkDestroyDevice(device, NULL);
 

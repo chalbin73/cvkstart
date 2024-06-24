@@ -356,28 +356,24 @@ void     vs_format_query_formats(VkPhysicalDevice physical_device, vs_format_que
 
 typedef struct vs_swapchain_info
 {
-    VkExtent2D         swapchain_extent;
-    VkFormat           swapchain_image_format;
-    VkColorSpaceKHR    swapchain_color_space;
+    VkExtent2D           swapchain_extent;
+    VkFormat             swapchain_image_format;
+    VkColorSpaceKHR      swapchain_color_space;
+    VkImageUsageFlags    image_usage;
 
-    uint32_t           image_count;
-    VkImage            swapchain_images[VS_SWAPCHAIN_MAX_IMG_COUNT];
+    uint32_t             image_count;
+    VkImage              swapchain_images[VS_SWAPCHAIN_MAX_IMG_COUNT];
 } vs_swapchain_info;
 
 typedef void (*vs_swapchain_callback_func)(VkDevice device, void *udata, vs_swapchain_info swapchain);
 
 typedef struct vs_swapchain
 {
-    bool                          swapchain_created;
-    VkSwapchainKHR                vk_swapchain;
-    VkSurfaceKHR                  surface;
-    VkImageUsageFlags             image_usage;
+    bool                 swapchain_created;
+    VkSwapchainKHR       vk_swapchain;
+    VkSurfaceKHR         surface;
 
-    vs_swapchain_info             swapchain_info;
-
-    vs_swapchain_callback_func    create_callback;
-    vs_swapchain_callback_func    destroy_callback;
-    void                         *callback_udata;
+    vs_swapchain_info    swapchain_info;
 } vs_swapchain;
 
 /**
@@ -386,21 +382,15 @@ typedef struct vs_swapchain
  * @param device The device with which to create the swapchain
  * @param surface The surface with which to create the swapchain
  * @param image_usage The image usage of the swapchain images
- * @param query A query for the format
- * @param set The format amongst which to search a suitable one
- * @param create_callback The callback used when creating the swapchain
- * @param destroy_callback The callback used when destroying the swapchain
- * @param callback_udata The user data to pass to the callbacks
+ * @param image_format The format used for the images
+ * @param swapchain_color_space The colorspace to use for the swapchain
  * @param[out] swapchain A pointer to were to write the new swapchain object
  * @returns Wether or not the swapchain set up was successful
  * @note The swapchain won't be ready after the call of this function.
  */
-void vs_swapchain_preconfigure(VkDevice device,
+bool vs_swapchain_preconfigure(VkDevice device,
                                VkSurfaceKHR surface,
-                               VkImageUsageFlags image_usage, vs_format_query query, vs_format_set set,
-                               vs_swapchain_callback_func create_callback,
-                               vs_swapchain_callback_func destroy_callback,
-                               void *callback_udata,
+                               VkImageUsageFlags image_usage, VkFormat image_format, VkColorSpaceKHR swapchain_color_space,
                                vs_swapchain *swapchain);
 
 
