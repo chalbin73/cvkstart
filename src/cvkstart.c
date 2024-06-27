@@ -1,5 +1,6 @@
 #include "cvkstart.h"
 #include <stdbool.h>
+#include <vulkan/vulkan_core.h>
 
 #define VS_VALIDATION_LAYER      "VK_LAYER_KHRONOS_validation"
 #define VS_DEBUG_UTILS_EXTENSION "VK_EXT_debug_utils"
@@ -965,9 +966,19 @@ vs_swapchain_preconfigure(VkDevice device,
     return true;
 }
 
-bool
-vs_swapchain_create(vs_swapchain    swapchain)
-{
+#define VS_MIN(a, b) ( (a) < (b) ? (a) : (b) )
 
+bool
+vs_swapchain_create(vs_swapchain swapchain, VkPhysicalDevice phy_dev, VkSurfaceKHR surface, uint32_t min_img_count)
+{
+    VkSurfaceCapabilitiesKHR surf_caps;
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(phy_dev, surface, &surf_caps);
+
+    VkSwapchainCreateInfoKHR swp_ci =
+    {
+        .sType         = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .surface       = surface,
+        .minImageCount = VS_MIN(surf_caps.maxImageCount, min_img_count);
+    };
 }
 
